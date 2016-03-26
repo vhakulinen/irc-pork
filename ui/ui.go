@@ -13,7 +13,7 @@ import (
 var (
 	// Writer writes data to status window. Is thread safe because
 	// uses channel to pass the data along to output loop
-	Writer = &writer{}
+	Writer io.Writer
 
 	// Input passes input from UI forward. Listen this on main.
 	Input  chan *InputData
@@ -39,6 +39,7 @@ type InputData struct {
 	Target  string
 	Message string
 	Conn    *utils.Connection
+	Writer  io.Writer
 }
 
 type channelOutput struct {
@@ -48,21 +49,16 @@ type channelOutput struct {
 }
 
 func (co *channelOutput) Write(line string) {
-	co.OutputBox.Write(line)
+	co.OutputBox.Write([]byte(line))
 }
 
 type writer struct {
 	io.Writer
 }
 
-func (w *writer) Write(b []byte) (int, error) {
+func (w writer) Write(b []byte) (int, error) {
 	output <- string(b)
 	return len(b), nil
-}
-
-func (w *writer) WriteStr(s string) (int, error) {
-	output <- s
-	return len(s), nil
 }
 
 func getChannelOutput(channel string, conn *utils.Connection) (*channelOutput, bool) {
@@ -121,7 +117,7 @@ loop:
 				break
 			}
 			// write to status window
-			statusWindow.Write(msg)
+			statusWindow.Write([]byte(msg))
 			break
 		case <-end:
 			break loop
@@ -163,10 +159,15 @@ loop:
 						conn = Connections.GetPool()[0]
 					}
 				}
+				w := Writer
+				if c, ok := getChannelOutput(inputBox.Target, conn); ok {
+					w = c.OutputBox
+				}
 				Input <- &InputData{
 					Target:  inputBox.Target,
 					Message: inputBox.GetContent(),
 					Conn:    conn,
+					Writer:  w,
 				}
 				inputBox.Clear()
 				break
@@ -230,6 +231,8 @@ func Init() {
 	statusWindow = NewOutputBox(0, 0, w, h-3, &[]string{})
 	inputBox = NewInputBox(0, h-1)
 	statusBar = NewStatusBar(0, h-2, w)
+
+	Writer = writer{}
 
 	channelOutputs = []*channelOutput{
 		&channelOutput{

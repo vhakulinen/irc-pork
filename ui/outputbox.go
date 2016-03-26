@@ -1,9 +1,14 @@
 package ui
 
-import "github.com/nsf/termbox-go"
+import (
+	"io"
+
+	"github.com/nsf/termbox-go"
+)
 
 // OutputBox is used as output window for channels/status window
 type OutputBox struct {
+	io.Writer
 	data       *[]string
 	x, y, w, h int
 }
@@ -17,8 +22,10 @@ func NewOutputBox(x, y, w, h int, data *[]string) *OutputBox {
 	}
 }
 
-func (ob *OutputBox) Write(line string) {
-	*ob.data = append(*ob.data, line)
+func (ob *OutputBox) Write(line []byte) (int, error) {
+	*ob.data = append(*ob.data, string(line))
+	redrawAll()
+	return len(line), nil
 }
 
 // Draw draws OutputBox using termbox. Doesn't call termbox.Flush()

@@ -3,6 +3,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -11,10 +12,11 @@ import (
 	"github.com/vhakulinen/girc/utils"
 )
 
-var commands = map[string]func(args []string, target string, conn *utils.Connection){
+var commands = map[string]func(args []string, target string, conn *utils.Connection,
+	output io.Writer){
 	// Echo echoes the data to output window
-	"echo": func(args []string, target string, conn *utils.Connection) {
-		ui.Writer.WriteStr(strings.Join(args[1:], " "))
+	"echo": func(args []string, target string, conn *utils.Connection, output io.Writer) {
+		ui.Writer.Write([]byte(strings.Join(args[1:], " ")))
 	},
 	// Connect connects to server using passed irc connection
 	"connect": ircCommandConnect,
@@ -31,16 +33,16 @@ func Handle(input *ui.InputData) {
 	args := strings.Split(input.Message[1:], " ")
 	for name, parse := range commands {
 		if name == args[0] {
-			parse(args, input.Target, input.Conn)
+			parse(args, input.Target, input.Conn, input.Writer)
 			break
 		}
 	}
 }
 
-func ircCommandJoin(args []string, target string, conn *utils.Connection) {
+func ircCommandJoin(args []string, target string, conn *utils.Connection, output io.Writer) {
 	if len(args) == 1 {
-		ui.Writer.WriteStr("Usage")
-		ui.Writer.WriteStr(fmt.Sprintf("\t%s <channel>", args[0]))
+		ui.Writer.Write([]byte("Usage"))
+		ui.Writer.Write([]byte(fmt.Sprintf("\t%s <channel>", args[0])))
 		return
 	}
 	conn.Encoder.Encode(&irc.Message{
@@ -51,11 +53,11 @@ func ircCommandJoin(args []string, target string, conn *utils.Connection) {
 	//conn.Join(args[1])
 }
 
-func ircCommandConnect(args []string, target string, _ *utils.Connection) {
+func ircCommandConnect(args []string, target string, _ *utils.Connection, output io.Writer) {
 	var defaultNick = "Girc"
 	usage := func() {
-		ui.Writer.WriteStr("Usage:")
-		ui.Writer.WriteStr("\tconnect <host> [<port>]")
+		ui.Writer.Write([]byte("Usage:"))
+		ui.Writer.Write([]byte("\tconnect <host> [<port>]"))
 	}
 	if len(args) == 1 {
 		usage()
@@ -113,15 +115,15 @@ func ircCommandConnect(args []string, target string, _ *utils.Connection) {
 	}()
 }
 
-func ircCommandPrivMsg(args []string, target string, conn *utils.Connection) {
+func ircCommandPrivMsg(args []string, target string, conn *utils.Connection, output io.Writer) {
 	err := conn.Encoder.Encode(&irc.Message{
 		Command:  irc.PRIVMSG,
 		Params:   []string{target},
 		Trailing: strings.Join(args[1:], " "),
 	})
 	if err != nil {
-		ui.Writer.WriteStr(fmt.Sprintf("Failed to send message: %v", err))
+		ui.Writer.Write([]byte(fmt.Sprintf("Failed to send message: %v", err)))
 	} else {
-		ui.Write(target, fmt.Sprintf("MEEE!!! @ %s: %s", target, strings.Join(args, " ")), conn)
+		output.Write([]byte(fmt.Sprintf("MEEE!!! @ %s: %s", target, strings.Join(args, " "))))
 	}
 }
