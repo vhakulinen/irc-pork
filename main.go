@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/vhakulinen/girc/commands"
-	"github.com/vhakulinen/girc/ui"
+	"github.com/vhakulinen/irc-pork/commands"
+	"github.com/vhakulinen/irc-pork/ui"
 )
 
 var defaultNick = "Girc"

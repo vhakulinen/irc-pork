@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/sorcix/irc"
-	"github.com/vhakulinen/girc/ui"
-	"github.com/vhakulinen/girc/utils"
+	"github.com/vhakulinen/irc-pork/ui"
+	"github.com/vhakulinen/irc-pork/utils"
 )
 
 var commands = map[string]func(args []string, target string, conn *utils.Connection,

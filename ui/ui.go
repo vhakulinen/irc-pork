@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/nsf/termbox-go"
-	"github.com/vhakulinen/girc/utils"
+	"github.com/vhakulinen/irc-pork/utils"
 )
 
 var (
