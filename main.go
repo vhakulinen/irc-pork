@@ -6,15 +6,19 @@ import (
 
 	"github.com/sorcix/irc"
 	"github.com/vhakulinen/girc/ui"
+	"github.com/vhakulinen/girc/utils"
 )
 
 var defaultNick = "Girc"
 
 func connect(addr string) {
-	conn, err := irc.Dial(addr)
+	iconn, err := irc.Dial(addr)
 	if err != nil {
 		ui.Writer.Write([]byte((fmt.Sprintf("Failed to connect: %v", err))))
 		return
+	}
+	conn := &utils.Connection{
+		iconn, addr,
 	}
 
 	_, err = conn.Encoder.Write([]byte(fmt.Sprintf("USER %s %s %s %s",

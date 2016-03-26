@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/nsf/termbox-go"
-	"github.com/sorcix/irc"
 	"github.com/vhakulinen/girc/utils"
 )
 
@@ -39,13 +38,13 @@ var (
 type InputData struct {
 	Target  string
 	Message string
-	Conn    *irc.Conn
+	Conn    *utils.Connection
 }
 
 type channelOutput struct {
 	*OutputBox
 	channel string
-	conn    *irc.Conn
+	conn    *utils.Connection
 }
 
 func (co *channelOutput) Write(line string) {
@@ -61,7 +60,7 @@ func (w *writer) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func getChannelOutput(channel string, conn *irc.Conn) (*channelOutput, bool) {
+func getChannelOutput(channel string, conn *utils.Connection) (*channelOutput, bool) {
 	for _, c := range channelOutputs {
 		if channel == c.channel && conn == c.conn {
 			return c, true
@@ -71,7 +70,7 @@ func getChannelOutput(channel string, conn *irc.Conn) (*channelOutput, bool) {
 }
 
 // Write writes msg to channel's output
-func Write(channel, msg string, conn *irc.Conn) {
+func Write(channel, msg string, conn *utils.Connection) {
 	c, ok := getChannelOutput(channel, conn)
 	// If there was no output for this channel, make one
 	if !ok {
@@ -92,7 +91,7 @@ func Write(channel, msg string, conn *irc.Conn) {
 	}
 }
 
-func setTarget(channel string, conn *irc.Conn) {
+func setTarget(channel string, conn *utils.Connection) {
 	c, ok := getChannelOutput(channel, conn)
 	if !ok {
 		return
@@ -100,7 +99,11 @@ func setTarget(channel string, conn *irc.Conn) {
 	inputBox.Target = channel
 	currentWindow = c
 
-	statusBar.SetData(fmt.Sprintf("%s - %s", channel, "Wish I knew which server..."))
+	var name = "Du'h"
+	if conn != nil {
+		name = conn.Name
+	}
+	statusBar.SetData(fmt.Sprintf("%s - %s", channel, name))
 }
 
 func outputLoop(wg *sync.WaitGroup) {
