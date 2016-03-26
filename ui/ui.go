@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"sync"
 
 	"github.com/nsf/termbox-go"
+	"github.com/sorcix/irc"
+	"github.com/vhakulinen/girc/utils"
 )
 
 var (
@@ -22,9 +25,12 @@ var (
 	statusBar *StatusBar
 
 	statusWindow  *OutputBox
-	currentWindow *OutputBox
+	currentWindow *channelOutput
 
-	channelOutputs []*ChannelOutput
+	// Connections contains all connections we have so when ever you
+	// create new connection remember to add it here...
+	Connections    = utils.NewConnectionPool()
+	channelOutputs []*channelOutput
 
 	redrawMutex = &sync.Mutex{}
 )
@@ -33,15 +39,16 @@ var (
 type InputData struct {
 	Target  string
 	Message string
+	Conn    *irc.Conn
 }
 
-// ChannelOutput .
-type ChannelOutput struct {
+type channelOutput struct {
 	*OutputBox
 	channel string
+	conn    *irc.Conn
 }
 
-func (co *ChannelOutput) Write(line string) {
+func (co *channelOutput) Write(line string) {
 	co.OutputBox.Write(line)
 }
 
@@ -54,9 +61,9 @@ func (w *writer) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func getChannelOutput(channel string) (*ChannelOutput, bool) {
+func getChannelOutput(channel string, conn *irc.Conn) (*channelOutput, bool) {
 	for _, c := range channelOutputs {
-		if channel == c.channel {
+		if channel == c.channel && conn == c.conn {
 			return c, true
 		}
 	}
@@ -64,33 +71,36 @@ func getChannelOutput(channel string) (*ChannelOutput, bool) {
 }
 
 // Write writes msg to channel's output
-func Write(channel, msg string) {
-	c, ok := getChannelOutput(channel)
+func Write(channel, msg string, conn *irc.Conn) {
+	c, ok := getChannelOutput(channel, conn)
 	// If there was no output for this channel, make one
 	if !ok {
 		w, h := termbox.Size()
-		c = &ChannelOutput{
+		c = &channelOutput{
 			OutputBox: NewOutputBox(0, 0, w, h-3, &[]string{}),
 			channel:   channel,
+			conn:      conn,
 		}
 		channelOutputs = append(channelOutputs, c)
-		setTarget(channel)
+		setTarget(channel, conn)
 	}
 
 	c.Write(msg)
 	// If this channel's output is being displayed, refresh the UI
-	if c.OutputBox == currentWindow {
+	if c == currentWindow {
 		redrawAll()
 	}
 }
 
-func setTarget(channel string) {
-	c, ok := getChannelOutput(channel)
+func setTarget(channel string, conn *irc.Conn) {
+	c, ok := getChannelOutput(channel, conn)
 	if !ok {
 		return
 	}
 	inputBox.Target = channel
-	currentWindow = c.OutputBox
+	currentWindow = c
+
+	statusBar.SetData(fmt.Sprintf("%s - %s", channel, "Wish I knew which server..."))
 }
 
 func outputLoop(wg *sync.WaitGroup) {
@@ -125,20 +135,30 @@ loop:
 				break loop
 			case termbox.KeyCtrlN:
 				for i, c := range channelOutputs {
-					if c.OutputBox == currentWindow {
+					if c == currentWindow {
 						if i+1 == len(channelOutputs) {
-							setTarget(channelOutputs[0].channel)
+							setTarget(channelOutputs[0].channel,
+								channelOutputs[0].conn)
 						} else {
-							setTarget(channelOutputs[i+1].channel)
+							setTarget(channelOutputs[i+1].channel,
+								channelOutputs[i+1].conn)
 						}
 						break
 					}
 				}
 				break
 			case termbox.KeyEnter:
+				conn := currentWindow.conn
+				if conn == nil {
+					pool := Connections.GetPool()
+					if len(pool) > 0 {
+						conn = Connections.GetPool()[0]
+					}
+				}
 				Input <- &InputData{
 					Target:  inputBox.Target,
 					Message: inputBox.GetContent(),
+					Conn:    conn,
 				}
 				inputBox.Clear()
 				break
@@ -203,15 +223,16 @@ func Init() {
 	inputBox = NewInputBox(0, h-1)
 	statusBar = NewStatusBar(0, h-2, w)
 
-	channelOutputs = []*ChannelOutput{
-		&ChannelOutput{
+	channelOutputs = []*channelOutput{
+		&channelOutput{
 			OutputBox: statusWindow,
-			channel:   "",
+			channel:   "status",
+			conn:      nil,
 		},
 	}
-	currentWindow = channelOutputs[0].OutputBox
+	currentWindow = channelOutputs[0]
 
-	setTarget("status")
+	setTarget("status", nil)
 
 	redrawAll()
 }
