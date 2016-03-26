@@ -1,21 +1,20 @@
-// commands package handles UI commands
+// Package commands handles UI commands
 package commands
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
 	"github.com/sorcix/irc"
+	"github.com/vhakulinen/girc/ui"
 	"github.com/vhakulinen/girc/utils"
 )
 
-var commands = map[string]func(args []string, channel *utils.Channel,
-	pool *utils.IrcPool, logger *log.Logger){
+var commands = map[string]func(args []string, target string, conn *utils.Connection){
 	// Echo echoes the data to output window
-	"echo": func(args []string, channel *utils.Channel, pool *utils.IrcPool, logger *log.Logger) {
-		logger.Println(strings.Join(args, " "))
+	"echo": func(args []string, target string, conn *utils.Connection) {
+		ui.Writer.WriteStr(strings.Join(args[1:], " "))
 	},
 	// Connect connects to server using passed irc connection
 	"connect": ircCommandConnect,
@@ -25,33 +24,38 @@ var commands = map[string]func(args []string, channel *utils.Channel,
 }
 
 // Handle handles UI input.
-func Handle(cmd string, channel *utils.Channel, pool *utils.IrcPool, logger *log.Logger) {
-	if cmd[0] != '/' {
-		cmd = "/privmsg " + cmd
+func Handle(input *ui.InputData) {
+	if input.Message[0] != '/' {
+		input.Message = "/privmsg " + input.Message
 	}
-	args := strings.Split(cmd[1:], " ")
+	args := strings.Split(input.Message[1:], " ")
 	for name, parse := range commands {
 		if name == args[0] {
-			parse(args, channel, pool, logger)
+			parse(args, input.Target, input.Conn)
 			break
 		}
 	}
 }
 
-func ircCommandJoin(args []string, channel *utils.Channel, pool *utils.IrcPool, logger *log.Logger) {
+func ircCommandJoin(args []string, target string, conn *utils.Connection) {
 	if len(args) == 1 {
-		logger.Println("Usage")
-		logger.Println(fmt.Sprintf("\t%s <channel>", args[0]))
+		ui.Writer.WriteStr("Usage")
+		ui.Writer.WriteStr(fmt.Sprintf("\t%s <channel>", args[0]))
 		return
 	}
+	conn.Encoder.Encode(&irc.Message{
+		Command: irc.JOIN,
+		Params:  args[1:],
+	})
 	//var conn = pool.Current
 	//conn.Join(args[1])
 }
 
-func ircCommandConnect(args []string, channel *utils.Channel, pool *utils.IrcPool, logger *log.Logger) {
+func ircCommandConnect(args []string, target string, _ *utils.Connection) {
+	var defaultNick = "Girc"
 	usage := func() {
-		logger.Println("Usage:")
-		logger.Println("\tconnect <host> [<port>]")
+		ui.Writer.WriteStr("Usage:")
+		ui.Writer.WriteStr("\tconnect <host> [<port>]")
 	}
 	if len(args) == 1 {
 		usage()
@@ -67,16 +71,57 @@ func ircCommandConnect(args []string, channel *utils.Channel, pool *utils.IrcPoo
 			return
 		}
 	}
-	if conn, err := irc.Dial(fmt.Sprintf("%s:%d", host, port)); err == nil {
-		pool.AddConnection(conn)
-	} else {
-		logger.Printf("Error: %v\n", err)
+	addr := fmt.Sprintf("%s:%d", host, port)
+	iconn, err := irc.Dial(addr)
+	if err != nil {
+		ui.Writer.Write([]byte((fmt.Sprintf("Failed to connect: %v", err))))
+		return
 	}
+	conn := &utils.Connection{
+		iconn, addr,
+	}
+
+	_, err = conn.Encoder.Write([]byte(fmt.Sprintf("USER %s %s %s %s",
+		defaultNick, defaultNick, defaultNick, defaultNick)))
+	_, err = conn.Encoder.Write([]byte(fmt.Sprintf("NICK %s", defaultNick)))
+	if err != nil {
+		fmt.Printf("Failed to write: %v", err)
+		conn.Close()
+		return
+	}
+
+	ui.Connections.AddConnection(conn)
+
+	// Loop to read data from IRC
+	// TODO: Add wait group for connections
+	go func() {
+		for {
+			msg, err := conn.Decode()
+			if err != nil {
+				ui.Writer.Write([]byte(fmt.Sprintf("Failed to read data from IRC: %v", err)))
+				continue
+			}
+			if msg.Command == irc.PING {
+				conn.Encoder.Write([]byte(fmt.Sprintf("PONG :%s", msg.Trailing)))
+			} else if msg.Command == irc.PRIVMSG {
+				ui.Write(msg.Params[0], fmt.Sprintf("%s @ %s: %s",
+					msg.User, msg.Params[0], msg.Trailing), conn)
+			} else {
+				ui.Writer.Write([]byte(msg.Bytes()))
+			}
+		}
+	}()
 }
 
-func ircCommandPrivMsg(args []string, channel *utils.Channel, pool *utils.IrcPool, logger *log.Logger) {
-	channel.Send(&irc.Message{
-		Command: irc.PRIVMSG,
-		Params:  args,
+func ircCommandPrivMsg(args []string, target string, conn *utils.Connection) {
+	err := conn.Encoder.Encode(&irc.Message{
+		Command:  irc.PRIVMSG,
+		Params:   []string{target},
+		Trailing: strings.Join(args[1:], " "),
 	})
+	if err != nil {
+		ui.Writer.WriteStr(fmt.Sprintf("Failed to send message: %v", err))
+	} else {
+		ui.Write(target, fmt.Sprintf("MEEE!!! @ %s: %s", target, strings.Join(args, " ")), conn)
+	}
 }

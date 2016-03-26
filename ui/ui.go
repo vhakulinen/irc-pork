@@ -60,6 +60,11 @@ func (w *writer) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+func (w *writer) WriteStr(s string) (int, error) {
+	output <- s
+	return len(s), nil
+}
+
 func getChannelOutput(channel string, conn *utils.Connection) (*channelOutput, bool) {
 	for _, c := range channelOutputs {
 		if channel == c.channel && conn == c.conn {
